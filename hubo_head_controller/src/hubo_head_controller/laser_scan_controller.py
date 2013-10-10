@@ -24,6 +24,8 @@ from geometry_msgs.msg import *
 import hubo_robot_msgs.msg as hrms
 import hubo_sensor_msgs.msg as hsms
 import dynamixel_msgs.msg as dmms
+import hubo_vision_common.srv as hvcs
+import rosbag
 
 class LaserScanController:
 
@@ -58,7 +60,7 @@ class LaserScanController:
 
     def laser_scan_cb(self, msg):
         if (self.active):
-            self.laser_scans.append([self.last_laser_state.current_pos, msg])
+            self.laser_scans.append([self.last_tilt_state, msg])
 
     def SelfTest(self):
         rospy.loginfo("Self-testing LaserScan Controller")
@@ -126,12 +128,32 @@ class LaserScanController:
                 self.server.set_aborted()
             self.active = False
             print "Scan action recorded " + str(len(self.laser_scans)) + " scans during the scan process"
+            laser_result = hsms.LaserScanResult()
+            laser_result.scan.header.frame_id = '/lidar_link'
+            if (result):
+                tilt = []
+                scan = []
+                for t, s in self.laser_scans:
+                    tilt.append(t)
+                    scan.append(s)
+                try:
+                    laser2cloud = rospy.ServiceProxy('laser_to_cloud', hvcs.LaserToCloud)
+                    resp = laser2cloud(tilt, scan)
+                    laser_result.scan = resp.scan
+                    laser_result.scan.header.frame_id = '/lidar_link' # B/c it is overwritten
+                    rospy.loginfo("Recieved laser cloud with " + str(len(resp.scan.data)/resp.scan.point_step) + " points.")
+                except rospy.ServiceException, e:
+                    rospy.logerr("Service call failed: %s" % e)
             result = self.RunTrajectory(post_traj)
             if (result):
                 rospy.loginfo("LaserScanAction post completed")
-                self.server.set_succeeded()
             else:
                 rospy.logerr("Unable to complete LaserScanAction")
+                self.server.set_aborted()
+            laser_result.scan.header.stamp = rospy.Time.now() # To ensure cloud appears in zero'd tilt frame
+            if (len(laser_result.scan.data) > 0):
+                self.server.set_succeeded(laser_result)
+            else:
                 self.server.set_aborted()
 
     def CheckSafetyBounds(self, tilt):
@@ -183,7 +205,7 @@ if __name__ == '__main__':
     rospy.loginfo("Loading LaserScanController...")
     tilt_controller_prefix = rospy.get_param("~tilt_controller_prefix", "/lidar_tilt_controller")
     zero_tilt_position = rospy.get_param("~zero_tilt_position", 0.0)
-    max_tilt_position = rospy.get_param("~max_tilt_position", (math.pi / 4.0))
+    max_tilt_position = rospy.get_param("~max_tilt_position", (math.pi / 2.5))
     min_tilt_position = rospy.get_param("~min_tilt_position", -(math.pi / 4.0))
     target_angular_rate = rospy.get_param("~target_angular_rate", (math.pi / 4.0))
     error_threshold = rospy.get_param("~error_threshold", (math.pi / 36.0))
