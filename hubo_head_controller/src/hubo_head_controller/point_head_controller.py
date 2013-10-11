@@ -76,7 +76,7 @@ class PointHeadController:
             else:
                 rospy.logerr("HEAD UNABLE TO UNSTOW - will try again")
                 return result
-        bringup_traj = self.BuildTrajectory(self.last_pan_state.current_pos, self.last_tilt_state.current_pos, self.zero_pan_position, self.zero_tilt_position, self.target_angular_rate)
+        bringup_traj = self.BuildTrajectory(self.last_pan_state.current_pos, self.last_tilt_state.current_pos, self.last_pan_state.current_pos, self.zero_tilt_position, self.target_angular_rate)
         result = self.RunTrajectory(bringup_traj)
         if (result):
             rospy.loginfo("Head brought up to the zero position")
